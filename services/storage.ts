@@ -1,6 +1,15 @@
 
 import { Teacher, Group, Subject, Student, Citation } from '../types';
 
+// ==========================================
+// CONFIGURACIÓN MAESTRA (REAL DE SUPABASE)
+// ==========================================
+const MASTER_CONFIG = {
+  url: "https://uoaobsagwtbrovuaanmn.supabase.co",
+  key: "sb_publishable_CpL-y6wLb9fDcTGVR8qJzA_2-NaW8Vt"
+};
+// ==========================================
+
 const KEYS = {
   TEACHERS: 'school_teachers',
   GROUPS: 'school_groups',
@@ -14,6 +23,7 @@ export interface CloudConfig {
   url: string;
   key: string;
   connected: boolean;
+  isMaster?: boolean;
 }
 
 export const storage = {
@@ -32,7 +42,21 @@ export const storage = {
   getCitations: (): Citation[] => JSON.parse(localStorage.getItem(KEYS.CITATIONS) || '[]'),
   setCitations: (data: Citation[]) => localStorage.setItem(KEYS.CITATIONS, JSON.stringify(data)),
 
-  getCloudConfig: (): CloudConfig => JSON.parse(localStorage.getItem(KEYS.CLOUD_CONFIG) || '{"url":"","key":"","connected":false}'),
+  getCloudConfig: (): CloudConfig => {
+    // Primero revisamos si hay configuración en el código (MASTER)
+    if (MASTER_CONFIG.url.startsWith("http") && MASTER_CONFIG.key.length > 10) {
+      return { 
+        url: MASTER_CONFIG.url, 
+        key: MASTER_CONFIG.key, 
+        connected: true,
+        isMaster: true 
+      };
+    }
+    // Si no, revisamos el localStorage (Manual/Antiguo)
+    const local = JSON.parse(localStorage.getItem(KEYS.CLOUD_CONFIG) || '{"url":"","key":"","connected":false}');
+    return local;
+  },
+
   setCloudConfig: (config: CloudConfig) => localStorage.setItem(KEYS.CLOUD_CONFIG, JSON.stringify(config)),
 
   exportAllData: () => {
@@ -60,12 +84,10 @@ export const storage = {
     }
   },
 
-  // SUBIR A LA NUBE (UPSERT REAL)
   async uploadToCloud(): Promise<{success: boolean, message: string}> {
     const config = storage.getCloudConfig();
-    if (!config.url || !config.key) return {success: false, message: "Faltan credenciales de Supabase"};
+    if (!config.url || !config.key) return {success: false, message: "No hay base de datos configurada"};
 
-    // Limpiamos la URL por si acaso termina en /
     const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
     const url = `${baseUrl}/rest/v1/school_backups`;
     
@@ -87,21 +109,16 @@ export const storage = {
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Error en servidor");
-      }
-      return { success: true, message: "¡Éxito! Datos guardados en la nube." };
+      if (!response.ok) throw new Error("Error en servidor");
+      return { success: true, message: "¡Sincronizado con éxito! Datos guardados en la nube." };
     } catch (e: any) {
-      console.error(e);
-      return { success: false, message: `Error: ${e.message || "No hay conexión"}` };
+      return { success: false, message: `Error al subir: Verifica que la tabla 'school_backups' exista en Supabase.` };
     }
   },
 
-  // BAJAR DE LA NUBE (SELECT REAL)
   async downloadFromCloud(): Promise<{success: boolean, message: string}> {
     const config = storage.getCloudConfig();
-    if (!config.url || !config.key) return {success: false, message: "Faltan credenciales de Supabase"};
+    if (!config.url || !config.key) return {success: false, message: "No hay base de datos configurada"};
 
     const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
     const url = `${baseUrl}/rest/v1/school_backups?id=eq.1&select=data`;
@@ -116,17 +133,17 @@ export const storage = {
         }
       });
 
-      if (!response.ok) throw new Error("Error al obtener datos");
+      if (!response.ok) throw new Error("Error de red");
 
       const result = await response.json();
       if (result && result.length > 0 && result[0].data) {
         if (storage.importAllData(result[0].data)) {
-          return { success: true, message: "¡Sincronización exitosa! Datos descargados." };
+          return { success: true, message: "Datos descargados correctamente." };
         }
       }
-      return { success: false, message: "La nube está vacía. Primero debes 'Subir' datos." };
+      return { success: false, message: "La nube está vacía. Pulsa 'Subir Datos' desde el equipo principal primero." };
     } catch (e: any) {
-      return { success: false, message: `Error de conexión: ${e.message}` };
+      return { success: false, message: `Error al descargar datos de la nube.` };
     }
   }
 };
