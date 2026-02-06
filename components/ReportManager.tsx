@@ -11,62 +11,52 @@ const ReportManager: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // Función para cargar/refrescar datos manualmente
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const loadData = () => {
-    console.log("Cargando datos desde el almacenamiento...");
     const data = storage.getCitations();
     const g = storage.getGroups();
     setCitations(data);
     setGroups(g);
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  // Filtrado de citaciones
   const filteredCitations = filterGroupId === 'all' 
     ? citations 
     : citations.filter(c => c.groupId === filterGroupId);
 
-  // FUNCIÓN DE BORRADO MEJORADA PARA PRUEBAS
+  // FUNCIÓN DE BORRADO SOLICITADA
   const handleClear = () => {
-    console.log("Botón 'Borrar Todo' presionado");
-
-    // 1. Verificar si hay algo que borrar
-    if (citations.length === 0) {
-      alert("No hay ninguna citación registrada en el sistema para borrar.");
+    // 1. Preguntar si desea iniciar el proceso
+    const confirmStart = window.confirm('¿Deseas iniciar el proceso de eliminación de reportes? (SÍ/NO)');
+    
+    // 2. Si no confirma, mostrar alerta y detener
+    if (!confirmStart) {
+      alert('Acción cancelada. No se borró nada.');
       return;
     }
 
-    // 2. Primera confirmación SÍ/NO
-    const confirm1 = window.confirm("¿Deseas iniciar el proceso de eliminación de reportes? (SÍ/NO)");
-    
-    if (confirm1) {
-      const isAll = filterGroupId === 'all';
-      const question = isAll 
-        ? "¿ESTÁS TOTALMENTE SEGURO? Esta acción borrará TODO de TODOS los grupos. ¿Continuar? (SÍ/NO)" 
-        : `¿Confirmas que quieres borrar solo las citaciones del Grupo seleccionado? (SÍ/NO)`;
+    // 3. Si confirma, proceder con la lógica de eliminación
+    const isAll = filterGroupId === 'all';
+    const finalConfirmation = isAll 
+      ? "¿Estás completamente seguro de borrar TODO el sistema? (SÍ/NO)" 
+      : `¿Borrar todas las citaciones del grupo ${filterGroupId}? (SÍ/NO)`;
 
-      // 3. Segunda confirmación de seguridad
-      if (window.confirm(question)) {
-        let newList: Citation[] = [];
-        
-        if (isAll) {
-          newList = []; // Borrar todo el array
-        } else {
-          newList = citations.filter(c => c.groupId !== filterGroupId); // Quitar solo el grupo
-        }
-
-        // 4. Ejecutar borrado
-        storage.setCitations(newList);
-        setCitations(newList);
-        
-        console.log("Eliminación completada. Quedan: " + newList.length + " citaciones.");
-        alert("¡ÉXITO! Los datos han sido borrados correctamente.");
+    if (window.confirm(finalConfirmation)) {
+      let newList: Citation[] = [];
+      
+      if (isAll) {
+        newList = [];
       } else {
-        alert("Acción cancelada. No se borró nada.");
+        newList = citations.filter(c => c.groupId !== filterGroupId);
       }
+
+      storage.setCitations(newList);
+      setCitations(newList);
+      alert('¡Eliminación exitosa!');
+    } else {
+      alert('Acción cancelada. No se borró nada.');
     }
   };
 
@@ -100,7 +90,6 @@ const ReportManager: React.FC = () => {
     });
   };
 
-  // Agrupamiento para visualización
   const reportData: Record<string, Record<string, { studentName: string, items: Citation[] }>> = {};
   filteredCitations.forEach(c => {
     if (!reportData[c.groupName]) reportData[c.groupName] = {};
@@ -112,7 +101,6 @@ const ReportManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Barra de Herramientas */}
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-white p-6 rounded-3xl border border-gray-200 shadow-md">
         <div className="flex items-center gap-3">
           <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100">
@@ -120,16 +108,12 @@ const ReportManager: React.FC = () => {
           </div>
           <div>
             <h3 className="font-black text-gray-900 text-xl uppercase tracking-tight">Consolidado de Citaciones</h3>
-            <p className="text-sm text-gray-400 font-medium">Total en sistema: {citations.length}</p>
+            <p className="text-sm text-gray-400 font-medium">Total: {citations.length} registros</p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-center">
-          <button 
-            onClick={loadData}
-            className="p-3 text-gray-400 hover:text-blue-600 transition-colors"
-            title="Refrescar datos"
-          >
+          <button onClick={loadData} className="p-3 text-gray-400 hover:text-blue-600 transition-colors" title="Refrescar">
             <RefreshCw size={20} />
           </button>
 
@@ -138,7 +122,7 @@ const ReportManager: React.FC = () => {
             onChange={(e) => setFilterGroupId(e.target.value)}
             className="flex-1 md:w-56 px-4 py-3 rounded-2xl border-2 border-gray-100 font-bold text-gray-700 bg-gray-50 outline-none focus:border-blue-500 transition-all cursor-pointer"
           >
-            <option value="all">MOSTRAR TODO</option>
+            <option value="all">TODOS LOS GRUPOS</option>
             {groups.map(g => (
               <option key={g.id} value={g.id}>GRUPO {g.name}</option>
             ))}
@@ -164,7 +148,6 @@ const ReportManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Contenido */}
       <div className="space-y-8" ref={reportRef}>
         {Object.keys(reportData).length === 0 ? (
           <div className="py-32 flex flex-col items-center justify-center text-gray-300 bg-gray-50/50 rounded-[40px] border-4 border-dashed border-gray-100">
@@ -246,10 +229,8 @@ const ReportManager: React.FC = () => {
           ))
         )}
       </div>
-
       <style>{`
         .page-break-inside-avoid { break-inside: avoid; }
-        @media print { .no-print { display: none !important; } }
       `}</style>
     </div>
   );
