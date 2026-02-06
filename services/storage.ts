@@ -32,21 +32,18 @@ export const storage = {
   getCitations: (): Citation[] => JSON.parse(localStorage.getItem(KEYS.CITATIONS) || '[]'),
   setCitations: (data: Citation[]) => localStorage.setItem(KEYS.CITATIONS, JSON.stringify(data)),
 
-  // Configuración de Nube
   getCloudConfig: (): CloudConfig => JSON.parse(localStorage.getItem(KEYS.CLOUD_CONFIG) || '{"url":"","key":"","connected":false}'),
   setCloudConfig: (config: CloudConfig) => localStorage.setItem(KEYS.CLOUD_CONFIG, JSON.stringify(config)),
 
-  // Exportar/Importar Local
   exportAllData: () => {
-    const allData = {
+    return JSON.stringify({
       teachers: storage.getTeachers(),
       groups: storage.getGroups(),
       subjects: storage.getSubjects(),
       students: storage.getStudents(),
       citations: storage.getCitations(),
       backupDate: new Date().toISOString()
-    };
-    return JSON.stringify(allData, null, 2);
+    });
   },
 
   importAllData: (jsonString: string) => {
@@ -63,23 +60,73 @@ export const storage = {
     }
   },
 
-  // Lógica de Sincronización con Supabase (vía REST para no complicar con SDKs pesados)
-  async syncToCloud(): Promise<{success: boolean, message: string}> {
+  // SUBIR A LA NUBE (UPSERT REAL)
+  async uploadToCloud(): Promise<{success: boolean, message: string}> {
     const config = storage.getCloudConfig();
-    if (!config.url || !config.key) return {success: false, message: "Faltan credenciales de nube"};
+    if (!config.url || !config.key) return {success: false, message: "Faltan credenciales de Supabase"};
+
+    // Limpiamos la URL por si acaso termina en /
+    const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
+    const url = `${baseUrl}/rest/v1/school_backups`;
+    
+    const payload = { 
+      id: 1, 
+      data: storage.exportAllData(), 
+      updated_at: new Date().toISOString() 
+    };
 
     try {
-      const allData = storage.exportAllData();
-      // Usamos una tabla llamada 'school_data' que el usuario debe crear o usamos un truco de storage simple
-      // Para este MVP, simulamos el guardado. En una versión real con SDK de Supabase:
-      /*
-      const { data, error } = await supabase.from('backups').upsert({ id: 1, data: allData });
-      */
-      
-      // Simulación de éxito para el usuario (le pediremos que use el botón de Exportar/Importar si falla el fetch)
-      return {success: true, message: "Datos subidos correctamente a la nube"};
-    } catch (e) {
-      return {success: false, message: "Error de conexión con la base de datos"};
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': config.key,
+          'Authorization': `Bearer ${config.key}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Error en servidor");
+      }
+      return { success: true, message: "¡Éxito! Datos guardados en la nube." };
+    } catch (e: any) {
+      console.error(e);
+      return { success: false, message: `Error: ${e.message || "No hay conexión"}` };
+    }
+  },
+
+  // BAJAR DE LA NUBE (SELECT REAL)
+  async downloadFromCloud(): Promise<{success: boolean, message: string}> {
+    const config = storage.getCloudConfig();
+    if (!config.url || !config.key) return {success: false, message: "Faltan credenciales de Supabase"};
+
+    const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
+    const url = `${baseUrl}/rest/v1/school_backups?id=eq.1&select=data`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': config.key,
+          'Authorization': `Bearer ${config.key}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error("Error al obtener datos");
+
+      const result = await response.json();
+      if (result && result.length > 0 && result[0].data) {
+        if (storage.importAllData(result[0].data)) {
+          return { success: true, message: "¡Sincronización exitosa! Datos descargados." };
+        }
+      }
+      return { success: false, message: "La nube está vacía. Primero debes 'Subir' datos." };
+    } catch (e: any) {
+      return { success: false, message: `Error de conexión: ${e.message}` };
     }
   }
 };
