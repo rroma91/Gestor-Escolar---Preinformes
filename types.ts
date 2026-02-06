@@ -34,4 +34,4 @@ export interface Citation {
   date: string;
 }
 
-export type View = 'dashboard' | 'teachers' | 'groups' | 'subjects' | 'students' | 'reports';
+export type View = 'dashboard' | 'teachers' | 'groups' | 'subjects' | 'students' | 'reports' | 'settings';

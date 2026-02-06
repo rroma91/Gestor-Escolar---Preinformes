@@ -22,7 +22,8 @@ import {
   Link2,
   CheckCircle2,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  Settings
 } from 'lucide-react';
 import { View, Teacher } from './types';
 import { storage, CloudConfig } from './services/storage';
@@ -67,6 +68,39 @@ const App: React.FC = () => {
     updateCounts();
   }, [currentView, authMode]);
 
+  // Added exportBackup to handle local file export
+  const exportBackup = () => {
+    const data = storage.exportAllData();
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `preinformes_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Added importBackup to handle local file import
+  const importBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (storage.importAllData(content)) {
+        alert('¡Datos importados con éxito!');
+        window.location.reload();
+      } else {
+        alert('Error al importar el archivo. Formato no válido.');
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === 'admin') {
@@ -95,14 +129,13 @@ const App: React.FC = () => {
     storage.setCloudConfig(newConfig);
     setCloudConfig(newConfig);
     if (isReady) {
-      alert('¡Configuración válida guardada! Ahora puedes sincronizar.');
+      alert('¡Configuración guardada! Ahora puedes subir tus datos.');
     } else {
-      alert('Por favor, ingresa una URL y Key válidas de Supabase.');
+      alert('Error: URL o Key no válidas. Revisa los datos de Supabase.');
     }
   };
 
   const handleUpload = async () => {
-    if (!window.confirm("¿Subir datos? Esto guardará tu información actual en la nube.")) return;
     setIsSyncing(true);
     const result = await storage.uploadToCloud();
     setIsSyncing(false);
@@ -110,7 +143,7 @@ const App: React.FC = () => {
   };
 
   const handleDownload = async () => {
-    if (!window.confirm("¿Bajar datos de la nube? Esto borrará lo que tienes en este navegador.")) return;
+    if (!window.confirm("¿Bajar datos? Esto borrará lo que tienes en este navegador actualmente.")) return;
     setIsSyncing(true);
     const result = await storage.downloadFromCloud();
     setIsSyncing(false);
@@ -122,78 +155,56 @@ const App: React.FC = () => {
     }
   };
 
-  const exportBackup = () => {
-    const data = storage.exportAllData();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `respaldo_escuela_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (storage.importAllData(content)) {
-        alert('¡Datos importados con éxito! La página se recargará.');
-        window.location.reload();
-      } else {
-        alert('Error: El archivo no es válido.');
-      }
-    };
-    reader.readAsText(file);
-  };
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'teachers', label: 'Docentes', icon: Users },
+    { id: 'groups', label: 'Grupos', icon: Layers },
+    { id: 'subjects', label: 'Materias', icon: BookOpen },
+    { id: 'students', label: 'Estudiantes', icon: GraduationCap },
+    { id: 'reports', label: 'Reportes', icon: ClipboardList },
+    { id: 'settings', label: 'Nube / DB', icon: Database },
+  ];
 
   if (authMode === 'none') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-          <div className="absolute top-10 left-10 w-64 h-64 bg-blue-500 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-10 right-10 w-96 h-96 bg-indigo-500 rounded-full blur-3xl"></div>
-        </div>
-
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
-          <div className="bg-white/95 backdrop-blur-md rounded-[2.5rem] shadow-2xl p-10 border border-white/20 transition-all hover:translate-y-[-5px]">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl p-10">
             <div className="text-center mb-8">
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/20">
+              <div className="bg-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
                 <Lock className="text-white" size={36} />
               </div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">COORDINADOR</h1>
-              <p className="text-slate-500 font-bold text-sm uppercase tracking-widest mt-2">Acceso Administrativo</p>
+              <h1 className="text-3xl font-black text-slate-900">COORDINADOR</h1>
+              <p className="text-slate-500 font-bold text-sm uppercase mt-2 tracking-widest">Admin</p>
             </div>
             <form onSubmit={handleAdminLogin} className="space-y-6">
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 focus:border-blue-500 outline-none text-center text-2xl font-black tracking-[0.5em] transition-all bg-slate-50"
+                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 focus:border-blue-500 outline-none text-center text-2xl font-black tracking-[0.5em] bg-slate-50"
                 placeholder="••••"
                 required
               />
-              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl transition-all shadow-lg shadow-blue-600/30 uppercase tracking-widest">
-                Entrar al Sistema
+              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl transition-all shadow-lg uppercase tracking-widest">
+                Entrar
               </button>
             </form>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md rounded-[2.5rem] shadow-2xl p-10 border border-white/20 transition-all hover:translate-y-[-5px]">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl p-10">
             <div className="text-center mb-8">
-              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-500/20">
+              <div className="bg-indigo-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
                 <UserCheck className="text-white" size={36} />
               </div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">DOCENTE</h1>
-              <p className="text-slate-500 font-bold text-sm uppercase tracking-widest mt-2">Registro de Preinformes</p>
+              <h1 className="text-3xl font-black text-slate-900">DOCENTE</h1>
+              <p className="text-slate-500 font-bold text-sm uppercase mt-2 tracking-widest">Preinformes</p>
             </div>
             <form onSubmit={handleTeacherLogin} className="space-y-6">
               <select 
                 value={selectedTeacherId}
                 onChange={(e) => setSelectedTeacherId(e.target.value)}
-                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 outline-none bg-slate-50 font-black text-slate-700 text-lg appearance-none cursor-pointer focus:border-indigo-500"
+                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 outline-none bg-slate-50 font-black text-slate-700"
                 required
               >
                 <option value="">¿QUIÉN ERES?</option>
@@ -206,11 +217,11 @@ const App: React.FC = () => {
                 maxLength={4}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 focus:border-indigo-500 outline-none text-center text-2xl font-black tracking-[0.5em] transition-all bg-slate-50"
+                className="w-full px-6 py-5 rounded-2xl border-2 border-slate-100 focus:border-indigo-500 outline-none text-center text-2xl font-black tracking-[0.5em] bg-slate-50"
                 placeholder="PIN"
                 required
               />
-              <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 uppercase tracking-widest">
+              <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-lg uppercase tracking-widest">
                 Iniciar Sesión
               </button>
             </form>
@@ -235,7 +246,7 @@ const App: React.FC = () => {
           </div>
           <button 
             onClick={() => { setAuthMode('none'); setPassword(''); }}
-            className="flex items-center gap-2 text-red-500 font-black hover:bg-red-50 px-6 py-3 rounded-2xl transition-all border border-transparent hover:border-red-100 uppercase text-xs tracking-widest"
+            className="flex items-center gap-2 text-red-500 font-black hover:bg-red-50 px-6 py-3 rounded-2xl border border-transparent hover:border-red-100 uppercase text-xs tracking-widest"
           >
             <LogOut size={18} /> Salir
           </button>
@@ -247,18 +258,10 @@ const App: React.FC = () => {
     );
   }
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'teachers', label: 'Docentes', icon: Users },
-    { id: 'groups', label: 'Grupos', icon: Layers },
-    { id: 'subjects', label: 'Materias', icon: BookOpen },
-    { id: 'students', label: 'Estudiantes', icon: GraduationCap },
-    { id: 'reports', label: 'Reportes', icon: ClipboardList },
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <aside className={`${isSidebarOpen ? 'w-72' : 'w-24'} bg-slate-900 transition-all duration-300 flex flex-col no-print overflow-hidden shadow-2xl z-20`}>
+    <div className="min-h-screen bg-slate-50 flex overflow-hidden">
+      {/* Sidebar Fija */}
+      <aside className={`${isSidebarOpen ? 'w-72' : 'w-24'} bg-slate-900 transition-all duration-300 flex flex-col no-print h-screen shrink-0`}>
         <div className="p-8 flex items-center justify-between">
           {isSidebarOpen && <span className="font-black text-2xl text-white tracking-tighter">PRE-INF <span className="text-blue-400">APP</span></span>}
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all">
@@ -266,7 +269,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <nav className="flex-1 px-6 space-y-3 mt-4">
+        <nav className="flex-1 px-6 space-y-2 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -278,7 +281,7 @@ const App: React.FC = () => {
               }`}
             >
               <item.icon size={22} className={currentView === item.id ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} />
-              {isSidebarOpen && <span className="ml-4 uppercase text-xs font-black tracking-widest">{item.label}</span>}
+              {isSidebarOpen && <span className="ml-4 uppercase text-[10px] font-black tracking-[0.2em]">{item.label}</span>}
             </button>
           ))}
         </nav>
@@ -289,29 +292,33 @@ const App: React.FC = () => {
             className="w-full flex items-center p-4 text-red-400 hover:bg-red-400/10 rounded-2xl transition-all font-black uppercase text-xs tracking-widest"
           >
             <LogOut size={22} />
-            {isSidebarOpen && <span className="ml-4">Finalizar</span>}
+            {isSidebarOpen && <span className="ml-4">Salir</span>}
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto h-screen p-10 bg-slate-50 relative">
+      {/* Área Principal con Scroll Independiente */}
+      <main className="flex-1 overflow-y-auto h-screen p-10 bg-slate-50 custom-scrollbar">
         <header className="mb-10 flex justify-between items-center no-print">
           <div>
             <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">
               {menuItems.find(i => i.id === currentView)?.label}
             </h2>
-            <p className="text-slate-400 font-bold text-sm tracking-widest mt-1">SISTEMA GESTIÓN ESCOLAR v2.5</p>
+            <p className="text-slate-400 font-bold text-sm tracking-widest mt-1 uppercase">Coordinación Académica</p>
           </div>
           
           <div className="flex items-center gap-4">
              {cloudConfig.connected ? (
-               <div className="bg-green-50 text-green-600 px-4 py-2 rounded-xl border border-green-100 flex items-center gap-2 text-xs font-black uppercase tracking-tighter shadow-sm animate-pulse">
-                 <CheckCircle2 size={16} /> Conexión Activa
+               <div className="bg-green-50 text-green-600 px-4 py-2 rounded-xl border border-green-100 flex items-center gap-2 text-[10px] font-black uppercase tracking-tighter shadow-sm">
+                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Nube Conectada
                </div>
              ) : (
-               <div className="bg-slate-100 text-slate-400 px-4 py-2 rounded-xl border border-slate-200 flex items-center gap-2 text-xs font-black uppercase tracking-tighter">
-                 <CloudOff size={16} /> Offline
-               </div>
+               <button 
+                 onClick={() => setCurrentView('settings')}
+                 className="bg-amber-50 text-amber-600 px-4 py-2 rounded-xl border border-amber-100 flex items-center gap-2 text-[10px] font-black uppercase tracking-tighter hover:bg-amber-100 transition-all"
+               >
+                 <AlertTriangle size={14} /> Conectar Base de Datos
+               </button>
              )}
           </div>
         </header>
@@ -327,134 +334,123 @@ const App: React.FC = () => {
                 <DashboardCard label="Reportes" count={counts.citations} icon={ClipboardList} color="red" />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="bg-gradient-to-br from-indigo-700 to-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
-                  <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
-                  
-                  <div className="flex justify-between items-start mb-8">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-indigo-500 p-3 rounded-2xl shadow-lg">
-                        <Database size={28} />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight">Sincronización Nube</h3>
-                        <p className="text-indigo-300 text-xs font-bold tracking-widest uppercase">Motor: Supabase</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => setShowHelp(!showHelp)}
-                      className="text-white/40 hover:text-white transition-colors"
-                    >
-                      <HelpCircle size={24} />
-                    </button>
-                  </div>
-                  
-                  {showHelp && (
-                    <div className="mb-6 bg-white/10 p-5 rounded-2xl border border-white/10 text-xs leading-relaxed animate-in fade-in slide-in-from-top-4 duration-300">
-                      <p className="font-bold mb-2 uppercase tracking-wider text-indigo-300">¿Dónde están mis llaves?</p>
-                      <ol className="list-decimal list-inside space-y-1 opacity-80">
-                        <li>Ve a tu proyecto en <span className="font-black">Supabase</span>.</li>
-                        <li>Clic en el icono de <span className="font-black">Settings</span> (abajo izq).</li>
-                        <li>Clic en <span className="font-black">API</span>.</li>
-                        <li>Copia <span className="font-black">Project URL</span> y <span className="font-black">anon public Key</span>.</li>
-                      </ol>
-                    </div>
-                  )}
-                  
-                  <div className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="relative group">
-                        <Link2 className="absolute left-4 top-4 text-white/30 group-focus-within:text-indigo-400 transition-colors" size={18} />
-                        <input 
-                          type="text" 
-                          placeholder="Pega la URL aquí" 
-                          value={cloudConfig.url}
-                          onChange={(e) => setCloudConfig({...cloudConfig, url: e.target.value})}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:bg-white/15 focus:border-indigo-400 transition-all font-bold placeholder:text-white/20 text-sm"
-                        />
-                      </div>
-                      <div className="relative group">
-                        <RefreshCw className="absolute left-4 top-4 text-white/30 group-focus-within:text-indigo-400 transition-colors" size={18} />
-                        <input 
-                          type="password" 
-                          placeholder="Pega la KEY aquí" 
-                          value={cloudConfig.key}
-                          onChange={(e) => setCloudConfig({...cloudConfig, key: e.target.value})}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:bg-white/15 focus:border-indigo-400 transition-all font-bold placeholder:text-white/20 text-sm"
-                        />
-                      </div>
-                      <button 
-                        onClick={handleSaveCloud}
-                        className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-black py-4 rounded-2xl transition-all shadow-lg uppercase text-xs tracking-widest flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle2 size={16} /> Verificar & Guardar
-                      </button>
-                    </div>
+              {!cloudConfig.connected && (
+                <div className="bg-slate-900 rounded-[2.5rem] p-12 text-center text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
+                  <Database className="mx-auto mb-6 text-blue-400" size={64} />
+                  <h3 className="text-3xl font-black mb-4 tracking-tight uppercase">Tus datos están en modo local</h3>
+                  <p className="text-slate-400 max-w-lg mx-auto mb-8 font-medium">
+                    Para que los profesores puedan ver los grupos desde sus casas, debes conectar la base de datos de Supabase.
+                  </p>
+                  <button 
+                    onClick={() => setCurrentView('settings')}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-black px-10 py-5 rounded-2xl transition-all shadow-xl shadow-blue-600/20 uppercase text-xs tracking-[0.2em]"
+                  >
+                    Configurar Nube Ahora
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-                    <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-white/10">
-                       <button 
-                         disabled={!cloudConfig.connected || isSyncing}
-                         onClick={handleUpload}
-                         className="flex flex-col items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white font-black py-6 rounded-[2rem] border border-white/10 transition-all disabled:opacity-20"
-                       >
-                         {isSyncing ? <RefreshCw className="animate-spin text-indigo-400" size={24} /> : <Upload className="text-indigo-400" size={24} />}
-                         <span className="text-[10px] uppercase tracking-widest mt-1">Subir a Nube</span>
-                       </button>
-                       <button 
-                         disabled={!cloudConfig.connected || isSyncing}
-                         onClick={handleDownload}
-                         className="flex flex-col items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white font-black py-6 rounded-[2rem] border border-white/10 transition-all disabled:opacity-20"
-                       >
-                         {isSyncing ? <RefreshCw className="animate-spin text-emerald-400" size={24} /> : <Download className="text-emerald-400" size={24} />}
-                         <span className="text-[10px] uppercase tracking-widest mt-1">Bajar de Nube</span>
-                       </button>
-                    </div>
+          {currentView === 'settings' && (
+            <div className="max-w-4xl mx-auto space-y-10">
+              <div className="bg-gradient-to-br from-indigo-800 to-slate-900 rounded-[3rem] p-12 text-white shadow-2xl relative">
+                <div className="flex items-center gap-6 mb-10">
+                  <div className="bg-white/10 p-4 rounded-3xl backdrop-blur-md border border-white/20">
+                    <Database size={40} className="text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-black uppercase tracking-tight">Configuración de Nube</h3>
+                    <p className="text-indigo-300 font-bold uppercase text-[10px] tracking-widest">Conexión con Supabase</p>
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] p-10 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-4 mb-8">
-                      <div className="bg-slate-200 p-3 rounded-2xl">
-                        <RefreshCw className="text-slate-600" size={28} />
+                <div className="space-y-8">
+                   <div className="grid grid-cols-1 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-indigo-300 ml-2 tracking-[0.2em]">Paso 1: Pegar Project URL</label>
+                        <div className="relative group">
+                          <Link2 className="absolute left-5 top-5 text-white/30" size={20} />
+                          <input 
+                            type="text" 
+                            placeholder="https://tu-proyecto.supabase.co" 
+                            value={cloudConfig.url}
+                            onChange={(e) => setCloudConfig({...cloudConfig, url: e.target.value})}
+                            className="w-full bg-white/5 border border-white/10 rounded-[1.5rem] py-5 pl-14 pr-6 outline-none focus:bg-white/10 focus:border-blue-400 transition-all font-bold"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Copia Manual</h3>
-                        <p className="text-slate-400 text-xs font-bold tracking-widest uppercase">Respaldo en Archivo</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-slate-500 font-medium leading-relaxed mb-8">
-                      Si quieres guardar una copia en tu memoria USB o disco duro, usa estas opciones. No requieren internet.
-                    </p>
-                  </div>
 
-                  <div className="space-y-4">
-                    <button 
-                      onClick={exportBackup}
-                      className="w-full flex items-center justify-between px-8 py-5 bg-white border border-slate-200 rounded-2xl hover:bg-slate-100 transition-all group shadow-sm"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Download size={20} className="text-slate-400 group-hover:text-slate-900 transition-colors" />
-                        <span className="text-xs font-black uppercase tracking-widest text-slate-700">Guardar Archivo .json</span>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-indigo-300 ml-2 tracking-[0.2em]">Paso 2: Pegar API Key (anon public)</label>
+                        <div className="relative group">
+                          <RefreshCw className="absolute left-5 top-5 text-white/30" size={20} />
+                          <input 
+                            type="password" 
+                            placeholder="Tu API Key de Supabase..." 
+                            value={cloudConfig.key}
+                            onChange={(e) => setCloudConfig({...cloudConfig, key: e.target.value})}
+                            className="w-full bg-white/5 border border-white/10 rounded-[1.5rem] py-5 pl-14 pr-6 outline-none focus:bg-white/10 focus:border-blue-400 transition-all font-bold"
+                          />
+                        </div>
                       </div>
-                      <ExternalLink size={16} className="text-slate-300" />
-                    </button>
-                    
-                    <input type="file" ref={fileInputRef} onChange={importBackup} className="hidden" accept=".json" />
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full flex items-center justify-between px-8 py-5 bg-slate-900 border border-slate-900 rounded-2xl hover:bg-black transition-all group shadow-xl"
-                    >
-                      <div className="flex items-center gap-3 text-white">
-                        <Upload size={20} className="text-white group-hover:scale-110 transition-transform" />
-                        <span className="text-xs font-black uppercase tracking-widest">Cargar Archivo .json</span>
-                      </div>
-                    </button>
+                   </div>
+
+                   <button 
+                    onClick={handleSaveCloud}
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-6 rounded-3xl transition-all shadow-2xl shadow-blue-600/30 uppercase text-sm tracking-widest flex items-center justify-center gap-3"
+                  >
+                    <CheckCircle2 size={24} /> Guardar Conexión
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-6 pt-10 border-t border-white/10">
+                     <button 
+                       disabled={!cloudConfig.connected || isSyncing}
+                       onClick={handleUpload}
+                       className="flex flex-col items-center gap-3 bg-white/5 hover:bg-white/10 p-8 rounded-[2rem] border border-white/10 transition-all disabled:opacity-20"
+                     >
+                       <Upload className="text-blue-400" size={32} />
+                       <span className="text-[10px] font-black uppercase tracking-widest">Subir a Nube</span>
+                     </button>
+                     <button 
+                       disabled={!cloudConfig.connected || isSyncing}
+                       onClick={handleDownload}
+                       className="flex flex-col items-center gap-3 bg-white/5 hover:bg-white/10 p-8 rounded-[2rem] border border-white/10 transition-all disabled:opacity-20"
+                     >
+                       <Download className="text-emerald-400" size={32} />
+                       <span className="text-[10px] font-black uppercase tracking-widest">Bajar de Nube</span>
+                     </button>
                   </div>
+                </div>
+
+                <div className="mt-10 bg-white/5 p-6 rounded-2xl border border-white/5 text-[10px] leading-relaxed opacity-60">
+                  <p className="font-black uppercase mb-2 tracking-widest flex items-center gap-2">
+                    <HelpCircle size={14} /> ¿Dónde encuentro esto?
+                  </p>
+                  En Supabase: Ajustes (Rueda dentada) &gt; API &gt; Copia 'Project URL' y 'anon public Key'.
+                </div>
+              </div>
+
+              {/* Backup Local - Siempre disponible */}
+              <div className="bg-slate-100 rounded-[3rem] p-12 flex items-center justify-between gap-10">
+                <div className="flex-1">
+                  <h4 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">Respaldo Manual (Archivo)</h4>
+                  <p className="text-sm text-slate-500 font-medium">Si no quieres usar la nube, descarga un archivo .json como copia de seguridad.</p>
+                </div>
+                <div className="flex gap-4">
+                  <button onClick={exportBackup} className="bg-white px-8 py-4 rounded-2xl border border-slate-200 font-black text-slate-700 uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all shadow-sm">
+                    Descargar .json
+                  </button>
+                  <button onClick={() => fileInputRef.current?.click()} className="bg-slate-900 px-8 py-4 rounded-2xl font-black text-white uppercase text-[10px] tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/20">
+                    Cargar .json
+                  </button>
+                  <input type="file" ref={fileInputRef} onChange={importBackup} className="hidden" accept=".json" />
                 </div>
               </div>
             </div>
           )}
+
           {currentView === 'teachers' && <TeacherManager />}
           {currentView === 'groups' && <GroupManager />}
           {currentView === 'subjects' && <SubjectManager />}
@@ -462,18 +458,17 @@ const App: React.FC = () => {
           {currentView === 'reports' && <ReportManager />}
         </div>
       </main>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+      `}</style>
     </div>
   );
 };
 
-interface DashboardCardProps {
-  label: string;
-  count: number;
-  icon: any;
-  color: string;
-}
-
-const DashboardCard: React.FC<DashboardCardProps> = ({ label, count, icon: Icon, color }) => {
+const DashboardCard: React.FC<{ label: string; count: number; icon: any; color: string; }> = ({ label, count, icon: Icon, color }) => {
   const colors: Record<string, string> = {
     blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
     green: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
@@ -481,10 +476,9 @@ const DashboardCard: React.FC<DashboardCardProps> = ({ label, count, icon: Icon,
     orange: 'from-orange-500 to-orange-600 shadow-orange-500/20',
     red: 'from-rose-500 to-rose-600 shadow-rose-500/20',
   };
-
   return (
-    <div className="p-8 rounded-[2rem] border border-slate-100 bg-white group hover:shadow-2xl hover:shadow-slate-200 transition-all duration-300">
-      <div className={`bg-gradient-to-br ${colors[color]} w-14 h-14 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-all shadow-lg`}>
+    <div className="p-8 rounded-[2.5rem] border border-slate-100 bg-white group hover:shadow-2xl hover:translate-y-[-5px] transition-all duration-300">
+      <div className={`bg-gradient-to-br ${colors[color]} w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg`}>
         <Icon size={24} className="text-white" />
       </div>
       <h3 className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">{label}</h3>
