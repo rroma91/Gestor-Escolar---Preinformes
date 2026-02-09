@@ -2,69 +2,95 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { Citation, Group } from '../types';
-import { Trash2, FileText, Users, BookOpen, Calendar, Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Trash2, FileText, Users, BookOpen, Calendar, Download, Loader2, AlertCircle, RefreshCw, Cloud } from 'lucide-react';
 
 const ReportManager: React.FC = () => {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [filterGroupId, setFilterGroupId] = useState('all');
   const [isExporting, setIsExporting] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadData();
+    initialLoad();
   }, []);
 
-  const loadData = () => {
+  const initialLoad = async () => {
+    setIsLoading(true);
+    const cloud = storage.getCloudConfig();
+    if (cloud.connected) {
+      // Intentamos bajar lo más nuevo de la nube al abrir reportes
+      await storage.downloadFromCloud();
+    }
+    loadLocalData();
+    setIsLoading(false);
+  };
+
+  const loadLocalData = () => {
     const data = storage.getCitations();
     const g = storage.getGroups();
     setCitations(data);
     setGroups(g);
   };
 
+  const handleManualRefresh = async () => {
+    setIsLoading(true);
+    const cloud = storage.getCloudConfig();
+    if (cloud.connected) {
+      await storage.downloadFromCloud();
+    }
+    loadLocalData();
+    setIsLoading(false);
+  };
+
   const filteredCitations = filterGroupId === 'all' 
     ? citations 
     : citations.filter(c => c.groupId === filterGroupId);
 
-  // FUNCIÓN DE BORRADO SOLICITADA
-  const handleClear = () => {
-    // 1. Preguntar si desea iniciar el proceso
-    const confirmStart = window.confirm('¿Deseas iniciar el proceso de eliminación de reportes? (SÍ/NO)');
-    
-    // 2. Si no confirma, mostrar alerta y detener
-    if (!confirmStart) {
-      alert('Acción cancelada. No se borró nada.');
-      return;
-    }
-
-    // 3. Si confirma, proceder con la lógica de eliminación
+  const handleClear = async () => {
     const isAll = filterGroupId === 'all';
-    const finalConfirmation = isAll 
-      ? "¿Estás completamente seguro de borrar TODO el sistema? (SÍ/NO)" 
-      : `¿Borrar todas las citaciones del grupo ${filterGroupId}? (SÍ/NO)`;
+    const groupName = isAll ? '' : groups.find(g => g.id === filterGroupId)?.name;
+    
+    const confirmMessage = isAll 
+      ? "¿Estás seguro de ELIMINAR TODAS las citaciones del sistema?\n\nEsta acción borrará el historial completo en todos los dispositivos."
+      : `¿Estás seguro de eliminar todas las citaciones del GRUPO ${groupName}?`;
 
-    if (window.confirm(finalConfirmation)) {
-      let newList: Citation[] = [];
-      
-      if (isAll) {
-        newList = [];
-      } else {
-        newList = citations.filter(c => c.groupId !== filterGroupId);
+    if (window.confirm(confirmMessage)) {
+      setIsClearing(true);
+      try {
+        let newList: Citation[] = [];
+        if (!isAll) {
+          newList = citations.filter(c => c.groupId !== filterGroupId);
+        }
+
+        storage.setCitations(newList);
+        setCitations(newList);
+
+        const cloud = storage.getCloudConfig();
+        if (cloud.connected) {
+          await storage.uploadToCloud();
+        }
+        alert('¡Eliminado y sincronizado!');
+      } catch (error) {
+        alert('Error al procesar la eliminación.');
+      } finally {
+        setIsClearing(false);
       }
-
-      storage.setCitations(newList);
-      setCitations(newList);
-      alert('¡Eliminación exitosa!');
-    } else {
-      alert('Acción cancelada. No se borró nada.');
     }
   };
 
-  const deleteSingle = (id: string) => {
-    if (window.confirm("¿Eliminar este registro específico? (SÍ/NO)")) {
+  const deleteSingle = async (id: string) => {
+    if (window.confirm("¿Eliminar este registro específico?")) {
       const updated = citations.filter(c => c.id !== id);
       storage.setCitations(updated);
       setCitations(updated);
+      
+      const cloud = storage.getCloudConfig();
+      if (cloud.connected) {
+        await storage.uploadToCloud();
+      }
     }
   };
 
@@ -75,7 +101,7 @@ const ReportManager: React.FC = () => {
     const element = reportRef.current;
     const opt = {
       margin: 10,
-      filename: `Reporte_${new Date().getTime()}.pdf`,
+      filename: `Reporte_Preinformes_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -103,17 +129,30 @@ const ReportManager: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-white p-6 rounded-3xl border border-gray-200 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100">
+          <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-100 relative">
             <FileText className="text-white" size={24} />
+            {isLoading && (
+              <div className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-1 animate-spin border-2 border-white">
+                <RefreshCw size={10} className="text-white" />
+              </div>
+            )}
           </div>
           <div>
-            <h3 className="font-black text-gray-900 text-xl uppercase tracking-tight">Consolidado de Citaciones</h3>
-            <p className="text-sm text-gray-400 font-medium">Total: {citations.length} registros</p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-black text-gray-900 text-xl uppercase tracking-tight">Consolidado</h3>
+              {isLoading && <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse uppercase">Actualizando de la nube...</span>}
+            </div>
+            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Total: {citations.length} Citaciones</p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-center">
-          <button onClick={loadData} className="p-3 text-gray-400 hover:text-blue-600 transition-colors" title="Refrescar">
+          <button 
+            onClick={handleManualRefresh} 
+            disabled={isLoading}
+            className={`p-3 rounded-xl transition-all ${isLoading ? 'text-blue-600 animate-spin' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`} 
+            title="Refrescar desde la nube"
+          >
             <RefreshCw size={20} />
           </button>
 
@@ -134,16 +173,17 @@ const ReportManager: React.FC = () => {
             className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white font-black rounded-2xl hover:bg-green-700 transition-all shadow-lg shadow-green-100 disabled:opacity-50 uppercase text-xs tracking-widest"
           >
             {isExporting ? <Loader2 className="animate-spin" size={20} /> : <Download size={20} />}
-            {isExporting ? 'Generando...' : 'PDF'}
+            {isExporting ? 'Procesando' : 'Descargar PDF'}
           </button>
 
           <button 
             type="button"
             onClick={handleClear}
-            className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 font-black border-2 border-red-100 rounded-2xl hover:bg-red-600 hover:text-white hover:border-red-600 transition-all shadow-sm uppercase text-xs tracking-widest"
+            disabled={isClearing || filteredCitations.length === 0}
+            className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 font-black border-2 border-red-100 rounded-2xl hover:bg-red-600 hover:text-white hover:border-red-600 transition-all shadow-sm uppercase text-xs tracking-widest disabled:opacity-50"
           >
-            <Trash2 size={20} />
-            {filterGroupId === 'all' ? 'Borrar Todo' : 'Borrar Grupo'}
+            {isClearing ? <Loader2 className="animate-spin" size={20} /> : <Trash2 size={20} />}
+            {filterGroupId === 'all' ? 'Limpiar Todo' : 'Borrar Grupo'}
           </button>
         </div>
       </div>
@@ -151,20 +191,29 @@ const ReportManager: React.FC = () => {
       <div className="space-y-8" ref={reportRef}>
         {Object.keys(reportData).length === 0 ? (
           <div className="py-32 flex flex-col items-center justify-center text-gray-300 bg-gray-50/50 rounded-[40px] border-4 border-dashed border-gray-100">
-            <AlertCircle size={80} className="mb-4 opacity-10" />
-            <p className="text-2xl font-black uppercase tracking-tighter">Sin información</p>
-            <p className="text-sm font-bold opacity-60">No hay citaciones guardadas en este momento.</p>
+            {isLoading ? (
+               <>
+                <RefreshCw size={80} className="mb-4 opacity-10 animate-spin" />
+                <p className="text-2xl font-black uppercase tracking-tighter">Buscando en la nube...</p>
+               </>
+            ) : (
+              <>
+                <AlertCircle size={80} className="mb-4 opacity-10" />
+                <p className="text-2xl font-black uppercase tracking-tighter">Sin información</p>
+                <p className="text-sm font-bold opacity-60">No hay citaciones para mostrar.</p>
+              </>
+            )}
           </div>
         ) : (
           Object.entries(reportData).map(([groupName, studentsMap]) => (
             <div key={groupName} className="bg-white border border-gray-100 rounded-[32px] overflow-hidden shadow-xl page-break-inside-avoid mb-10">
-              <div className="bg-gray-900 px-8 py-5 flex justify-between items-center">
+              <div className="bg-slate-900 px-8 py-5 flex justify-between items-center">
                 <h4 className="text-white font-black text-2xl tracking-tighter flex items-center gap-3 uppercase">
                   <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
                   GRUPO {groupName}
                 </h4>
                 <div className="flex flex-col items-end">
-                   <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">Total Citados</span>
+                   <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">Estudiantes Citados</span>
                    <span className="bg-blue-600 text-white text-sm font-black px-4 py-1 rounded-full border border-blue-400">
                     {Object.keys(studentsMap).length}
                   </span>
@@ -175,18 +224,18 @@ const ReportManager: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b bg-gray-50/30 text-gray-400 text-[11px] font-black uppercase tracking-[0.25em]">
-                      <th className="py-5 px-10">Estudiante</th>
-                      <th className="py-5 px-10">Reportes de Asignaturas</th>
+                      <th className="py-5 px-10 w-1/3">Estudiante</th>
+                      <th className="py-5 px-10">Materias Reportadas</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {Object.values(studentsMap).sort((a,b) => a.studentName.localeCompare(b.studentName)).map((studentData) => (
                       <tr key={studentData.studentName} className="hover:bg-blue-50/10 transition-colors align-top">
                         <td className="py-8 px-10">
-                          <div className="font-black text-gray-900 uppercase text-lg leading-tight mb-2">{studentData.studentName}</div>
+                          <div className="font-black text-slate-900 uppercase text-lg leading-tight mb-2">{studentData.studentName}</div>
                           <div className="inline-flex items-center gap-2 bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider">
                             <AlertCircle size={12} />
-                            {studentData.items.length} Reportes pendientes
+                            {studentData.items.length} Reporte(s)
                           </div>
                         </td>
                         <td className="py-8 px-10">
@@ -202,7 +251,7 @@ const ReportManager: React.FC = () => {
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] font-bold">
                                     <span className="text-gray-400 flex items-center gap-2 uppercase tracking-wide">
-                                      <Users size={14} className="text-blue-400" /> Docente: {item.teacherName}
+                                      <Users size={14} className="text-blue-400" /> Profe: {item.teacherName}
                                     </span>
                                     <span className="text-gray-300 flex items-center gap-2 uppercase tracking-wide">
                                       <Calendar size={14} /> {item.date}
@@ -212,7 +261,8 @@ const ReportManager: React.FC = () => {
                                 <button 
                                   onClick={() => deleteSingle(item.id)}
                                   data-html2canvas-ignore="true"
-                                  className="text-gray-200 hover:text-red-600 p-3 transition-all opacity-0 group-hover/item:opacity-100"
+                                  className="text-gray-300 hover:text-red-600 p-3 transition-all opacity-0 group-hover/item:opacity-100"
+                                  title="Eliminar reporte individual"
                                 >
                                   <Trash2 size={20} />
                                 </button>

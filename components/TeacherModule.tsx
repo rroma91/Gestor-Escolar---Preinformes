@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { Teacher, Group, Subject, Student, Citation } from '../types';
-import { Check, Send, AlertCircle, Info } from 'lucide-react';
+import { Check, Send, AlertCircle, Info, Loader2 } from 'lucide-react';
 
 interface Props {
   teacher: Teacher;
@@ -39,40 +39,51 @@ const TeacherModule: React.FC<Props> = ({ teacher }) => {
     setSelectedStudentIds(next);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedGroupId || !selectedSubjectId || selectedStudentIds.size === 0) {
       alert('Por favor seleccione grupo, asignatura y al menos un estudiante.');
       return;
     }
 
     setIsSubmitting(true);
-    const existingCitations = storage.getCitations();
-    const group = groups.find(g => g.id === selectedGroupId)!;
-    const subject = subjects.find(s => s.id === selectedSubjectId)!;
-    
-    const newCitations: Citation[] = Array.from(selectedStudentIds).map(studentId => {
-      const student = groupStudents.find(s => s.id === studentId)!;
-      return {
-        id: Math.random().toString(36).substring(2, 11),
-        teacherId: teacher.id,
-        teacherName: teacher.name,
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        subjectId: subject.id,
-        subjectName: subject.name,
-        date: new Date().toLocaleDateString()
-      };
-    });
+    try {
+      const existingCitations = storage.getCitations();
+      const group = groups.find(g => g.id === selectedGroupId)!;
+      const subject = subjects.find(s => s.id === selectedSubjectId)!;
+      
+      const newCitations: Citation[] = Array.from(selectedStudentIds).map(studentId => {
+        const student = groupStudents.find(s => s.id === studentId)!;
+        return {
+          id: Math.random().toString(36).substring(2, 11),
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          studentId: student.id,
+          studentName: student.name,
+          groupId: group.id,
+          groupName: group.name,
+          subjectId: subject.id,
+          subjectName: subject.name,
+          date: new Date().toLocaleDateString()
+        };
+      });
 
-    storage.setCitations([...existingCitations, ...newCitations]);
-    
-    setTimeout(() => {
-      setIsSubmitting(false);
-      alert(`Se han generado ${newCitations.length} citaciones correctamente.`);
+      // 1. Guardar localmente
+      const updatedCitations = [...existingCitations, ...newCitations];
+      storage.setCitations(updatedCitations);
+
+      // 2. Subir a la nube automáticamente
+      const cloud = storage.getCloudConfig();
+      if (cloud.connected) {
+        await storage.uploadToCloud();
+      }
+
+      alert(`¡Éxito! Se han generado y enviado ${newCitations.length} citaciones.`);
       setSelectedStudentIds(new Set());
-    }, 800);
+    } catch (error) {
+      alert('Error al guardar. Se guardó localmente pero no se pudo subir a la nube.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -116,7 +127,17 @@ const TeacherModule: React.FC<Props> = ({ teacher }) => {
             disabled={isSubmitting || selectedStudentIds.size === 0}
             className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
           >
-            {isSubmitting ? 'Guardando...' : <><Send size={20} /> Generar Citaciones ({selectedStudentIds.size})</>}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                Enviando a la nube...
+              </>
+            ) : (
+              <>
+                <Send size={20} /> 
+                Generar Citaciones ({selectedStudentIds.size})
+              </>
+            )}
           </button>
         </div>
 
